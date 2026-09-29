@@ -8,14 +8,14 @@
 
 #include "SpaceMono26.h"
 #include "SpaceMono42.h"
-// NB: SpaceMono36.h a été retiré car aucun display.loadFont(SpaceMono36) n'apparaît
-// dans ce fichier. Remets-le si tu l'utilises ailleurs dans le projet.
+// NB: SpaceMono36.h has been removed as no display.loadFont(SpaceMono36) appears in this file. Re-add it if you use it elsewhere in the project.
+
 
 M5GFX display;
 
-// ---------- Boutons de page ----------
-constexpr gpio_num_t PIN_BUTTON_PREV = GPIO_NUM_37;   // page précédente
-constexpr gpio_num_t PIN_BUTTON_NEXT = GPIO_NUM_39;   // page suivante
+// ---------- Page Buttons ----------
+constexpr gpio_num_t PIN_BUTTON_PREV = GPIO_NUM_37;    // previous page button
+constexpr gpio_num_t PIN_BUTTON_NEXT = GPIO_NUM_39;    // next page button
 constexpr uint32_t BUTTON_DEBOUNCE_MS = 250;
 
 int currentPage = 1;
@@ -31,16 +31,29 @@ constexpr gpio_num_t PIN_MAIN_POWER      = GPIO_NUM_2;
 // ---------- Home Assistant ----------
 const char* ENTITY_CLIMATE  = "climate.clim";
 const char* ENTITY_TEMP     = "sensor.salon_temperature";
-const char* ENTITY_HUMIDITY = "sensor.salon_humidite";   // capteur d'humidité séparé
-const char* ENTITY_OUTDOOR_TEMP     = "sensor.merignac_temperature";
-const char* ENTITY_OUTDOOR_HUMIDITY = "sensor.merignac_humidity";
+const char* ENTITY_HUMIDITY = "sensor.salon_humidite";
+// Becky's Vivarium
+const char* BECKY_LIGHTS_PWR_SWITCH = "switch.becky_s_lights";
+const char* BECKY_LIGHTS_PWR_CURRENT = "sensor.becky_s_lights_current";
+// Warm Side
+const char* ENTITY_BECKY_WARMSIDE_TEMP     = "sensor.becky_s_vivarium_warm_side_temperature";
+const char* ENTITY_BECK_WARMSIDE_HUMIDITY = "sensor.becky_s_vivarium_warm_side_humidity";
+// Cool Side
+const char* ENTITY_BECKY_COOLSIDE_TEMP     = "sensor.becky_s_vivarium_cool_side_temperature";
+const char* ENTITY_BECKY_COOLSIDE_HUMIDITY = "sensor.becky_s_vivarium_cool_side_humidity";
+// Outdoor Sensors
+const char* ENTITY_OUTDOOR_TEMP     = "sensor.stardustweather_temperature";
+const char* ENTITY_OUTDOOR_HUMIDITY = "sensor.stardustweather_humidity";
+// Air Quality
 const char* ENTITY_BEDROOM_TEMP     = "sensor.alpstuga_air_quality_monitor_temperature";
 const char* ENTITY_BEDROOM_HUMIDITY = "sensor.alpstuga_air_quality_monitor_humidite";
+// Wifi
 const char* ENTITY_WIFI_BUTTON = "input_button.creer_voucher";
 const char* ENTITY_WIFI_SENSOR = "sensor.liste_hotspot_vouchers";
 
-// ---------- Géométrie ----------
-// Un Rect decrit un rectangle a l'ecran : coin haut-gauche (x,y) + largeur/hauteur (w,h).
+
+// ---------- Geometry ----------
+// A Rect describes a rectangle on the screen: top-left corner (x,y) + width/height (w,h).
 struct Rect { int x,y,w,h; };
 bool inRect(const Rect& rect,int x,int y){return x>=rect.x&&x<=rect.x+rect.w&&y>=rect.y&&y<=rect.y+rect.h;}
 
@@ -52,7 +65,7 @@ constexpr int LINE_MEDIUM = 80;
 constexpr int LINE_LARGE  = 100;
 
 // ---------- Actions ----------
-constexpr int MAX_BUTTONS_PER_CARD = 6; // nb max de boutons dans une carte Actions (Eclairage/Modes)
+constexpr int MAX_BUTTONS_PER_CARD = 6; // max number of buttons in an Actions card (Lighting/Modes)
 struct ActionCard {
   const char* title;
   const char* domain[MAX_BUTTONS_PER_CARD];
@@ -66,12 +79,12 @@ struct ActionCard {
 };
 
 ActionCard lighting={
-  "Éclairage",
+  "Lighting",
   {"scene","scene","scene","scene","scene","scene"},
   {"turn_on","turn_on","turn_on","turn_on","turn_on","turn_on"},
   {"scene.canap","scene.diner","scene.all_off_cuisine_et_salon",
    "scene.welcome_home","scene.film_2","scene.veilleuse"},
-  {"CANAP","DINER","OFF","ENTREE","KINO","VEILLEUSE"},
+  {"DEN","KITCHEN","DINING","ALL OFF","PORCH","BEDROOMS"},
   {nullptr,nullptr,nullptr,nullptr,nullptr,nullptr}
 };
 
@@ -81,40 +94,41 @@ ActionCard modes={
   {"toggle","toggle","toggle",nullptr,nullptr,nullptr},
   {"input_boolean.annonce_audio_bus","input_boolean.absence_prolongee",
    "automation.fermeture_automatique_volets",nullptr,nullptr,nullptr},
-  {"BUS","ABSENCE","SUNSHIELD",nullptr,nullptr,nullptr},
+  {"HOME","AWAY","NIGHT",nullptr,nullptr,nullptr},
   {"input_boolean.annonce_audio_bus","input_boolean.absence_prolongee",
    "automation.fermeture_automatique_volets",nullptr,nullptr,nullptr}
 };
 
-// Toutes les cartes "Actions" de la page 1, utilisées dans les boucles génériques
+// All "Actions" cards on page 1, used in generic loop functions
 // (setupLayout, drawPage, refreshAction, touchAction).
 ActionCard* actionCards[]={&lighting,&modes};
 
-// ---------- Volets ----------
-// Une seule ligne de commandes (monter/stop/descendre), partagée entre volets.
-// Une ligne de sélection permet de choisir quel volet elle pilote.
+// ---------- Blinds ----------
+// A single command line (up/stop/down), shared between blinds.
+// A selection line allows you to choose which blind it controls.
 struct CoverCard {
   const char* title;
   const char* entity;
   String state;   // "open","closed","opening","closing",...
 };
 CoverCard covers[]={
-  {"CUISINE","cover.shellyplus2pm_485519965dac"},
-  {"SALON","cover.shellyswitch25_4c752532f095"}
+  // Update These - Or do something with the code block
+  {"Bedroom","cover.shellyplus2pm_485519965dac"},
+  {"Living Room","cover.shellyswitch25_4c752532f095"}
 };
 constexpr int COVER_COUNT=2;
 
 struct CoversBlock { Rect bounds; int titleHeight,selectHeight,buttonsHeight; } coversBlock;
-int selectedCover=0;   // index du volet actuellement piloté
-bool page2DataLoaded=false; // Volets/Voucher Wi-Fi ne sont chargés qu'au premier affichage de la page 2
+int selectedCover=0;   // index of the blind currently being controlled
+bool page2DataLoaded=false; // Blinds/Wi-Fi voucher data is loaded only on the first display of page 2
 
-// ---------- Climatisation ----------
-// Mode de fonctionnement affiché/piloté : Chauffage / Clim / Off
-// (correspond aux hvac_mode Home Assistant "heat" / "cool" / "off")
+// ---------- Climate ----------
+// Operational mode displayed/piloted: Heating / Cooling / Off
+// (corresponds to hvac_mode Home Assistant "heat" / "cool" / "off")
 constexpr float TEMP_STEP = 1.0f;
 constexpr float TEMP_MIN  = 10.0f;
 constexpr float TEMP_MAX  = 30.0f;
-const char* HVAC_LABELS[3] = {"CHAUFFAGE","CLIM","OFF"};
+const char* HVAC_LABELS[3] =  {"HEATING","COOLING","OFF"};
 const char* HVAC_MODES[3]  = {"heat","cool","off"};
 
 struct ClimateCard {
@@ -141,14 +155,14 @@ String spotifyArtist="";
 String spotifyState="";
 bool hasSpotify=false;
 
-// ---------- Dessin : primitives de base ----------
+// ---------- Drawing: Basic Primitives ----------
 void drawThickRoundedRect(int x,int y,int width,int height,int radius,uint32_t color,int thickness){
   for(int i=0;i<thickness;i++) display.drawRoundRect(x+i,y+i,width-2*i,height-2*i,max(0,radius-i),color);
 }
 void drawHorizontalLine(int x,int y,int width,uint32_t color,int thickness){display.fillRect(x,y-thickness/2,width,thickness,color);}
 void drawVerticalLine(int x,int y,int height,uint32_t color,int thickness){display.fillRect(x-thickness/2,y,thickness,height,color);}
 
-// ---------- Dessin : icônes ----------
+// ---------- Drawing: Icons ----------
 void drawStopIcon(int centerX,int centerY,int size,uint32_t color){
   display.fillRect(centerX-size,centerY-size,2*size,2*size,color);
 }
@@ -166,9 +180,8 @@ void drawPauseIcon(int centerX,int centerY,int size,uint32_t color){
   display.fillRect(centerX+size/2-barWidth,centerY-size,barWidth,2*size,color);
 }
 
-// Trace une ligne "épaisse" en dessinant plusieurs lignes parallèles
-// décalées perpendiculairement à la direction du segment.
-// Fonctionne quel que soit l'angle (contrairement à un simple +1 en X).
+// Trace a thick line by drawing multiple parallel lines shifted perpendicularly to the direction of the segment.
+// Works regardless of the angle (unlike a simple +1 in X).
 void drawThickLine(int x0,int y0,int x1,int y1,uint32_t color,int thickness){
   float dx=x1-x0, dy=y1-y0;
   float len=sqrtf(dx*dx+dy*dy);
@@ -185,7 +198,7 @@ void drawThickLine(int x0,int y0,int x1,int y1,uint32_t color,int thickness){
   }
 }
 
-// Ligne ondulée (volute de chaleur), tracée par segments successifs.
+// Wavy line (heat wave), drawn in successive segments.
 void drawHeatWaveSegment(int centerX,int topY,int bottomY,int amplitude,uint32_t color){
   const int SEGMENT_COUNT=8;
   const int THICKNESS=3;   // épaisseur du trait, ajuster au besoin
@@ -199,7 +212,7 @@ void drawHeatWaveSegment(int centerX,int topY,int bottomY,int amplitude,uint32_t
   }
 }
 
-// Icône chauffage : inchangée, la barre est déjà pleine (fillRect).
+// Heating icon: unchanged, the bar is already full (fillRect).
 void drawHeatingIcon(int centerX,int centerY,int size,uint32_t color){
   int barY=centerY+(int)(size*0.85f);
   display.fillRect(centerX-(int)(size*0.8f),barY,(int)(size*1.6f),(int)(size*0.22f),color);
@@ -210,16 +223,20 @@ void drawHeatingIcon(int centerX,int centerY,int size,uint32_t color){
   drawHeatWaveSegment(centerX+(int)(size*0.55f),topY,bottomY,amplitude,color);
 }
 
-// Icône clim : flocon hexagonal (3 axes) avec ramifications sur chaque branche.
+// Snowflake icon: hexagonal snowflake (3 axes) with ramifications on each branch.
 void drawSnowflakeIcon(int centerX,int centerY,int size,uint32_t color){
+
   const int THICKNESS=3;
+  
   for(int axis=0;axis<3;axis++){
     float angle=axis*PI/3.0f, dx=cosf(angle), dy=sinf(angle);
+
     drawThickLine(centerX-dx*size, centerY-dy*size, centerX+dx*size, centerY+dy*size, color, THICKNESS);
     for(int side=-1;side<=1;side+=2){
       float branchX=centerX+dx*size*0.55f*side, branchY=centerY+dy*size*0.55f*side;
       for(int direction=-1;direction<=1;direction+=2){
         float branchAngle=angle+direction*(PI/3.0f);
+
         drawThickLine(branchX,branchY,
           branchX+cosf(branchAngle)*size*0.32f*side,
           branchY+sinf(branchAngle)*size*0.32f*side,
@@ -229,7 +246,7 @@ void drawSnowflakeIcon(int centerX,int centerY,int size,uint32_t color){
   }
 }
 
-// ---------- Dessin : cadre commun à toutes les cartes ----------
+// ---------- Drawing : common frame for all cards -------
 void drawCardFrame(const Rect& bounds,const char* title,int titleHeight){
   display.fillRoundRect(bounds.x,bounds.y,bounds.w,bounds.h,CORNER_RADIUS,TFT_WHITE);
   display.setTextDatum(middle_center);
@@ -239,7 +256,7 @@ void drawCardFrame(const Rect& bounds,const char* title,int titleHeight){
   drawHorizontalLine(bounds.x,bounds.y+titleHeight,bounds.w,TFT_BLACK,LINE_THICKNESS);
 }
 
-// Carte générique à 3 boutons de texte côte à côte (utilisée pour "Modes").
+// Generic three-button card (used for "Modes").
 void drawThreeButtonCard(const Rect& bounds,const char* title,int titleHeight,int buttonsHeight,
                           int pressedIndex,const bool* activeStates,const char* labels[3]){
   drawCardFrame(bounds,title,titleHeight);
@@ -257,7 +274,7 @@ void drawThreeButtonCard(const Rect& bounds,const char* title,int titleHeight,in
   drawThickRoundedRect(bounds.x,bounds.y,bounds.w,bounds.h,CORNER_RADIUS,TFT_BLACK,BORDER_THICKNESS);
 }
 
-// Carte "Eclairage" : grille de 6 boutons (3 colonnes x 2 lignes).
+// Lighting card: grid of 6 buttons (3 columns x 2 rows).
 void drawLightingCard(ActionCard& actionCard,int pressedIndex=-1){
   drawCardFrame(actionCard.bounds,actionCard.title,actionCard.titleHeight);
   int cellWidth=actionCard.bounds.w/3, rowHeight=actionCard.buttonsHeight/2, gridTop=actionCard.bounds.y+actionCard.titleHeight;
@@ -282,14 +299,14 @@ void drawAction(ActionCard& actionCard,int pressedIndex=-1){
                             pressedIndex,actionCard.active,actionCard.label);
 }
 
-// pressedSelector : bouton de sélection du volet en cours d'appui (-1 = aucun)
-// pressedButton   : bouton monter/stop/descendre en cours d'appui (-1 = aucun)
+// pressedSelector : button of the currently pressed section (-1 = none)
+// pressedButton   : up/down button being pressed (-1 = none)
 void drawCovers(int pressedSelector=-1,int pressedButton=-1){
-  drawCardFrame(coversBlock.bounds,"Volets",coversBlock.titleHeight);
+  drawCardFrame(coversBlock.bounds,"Blinds",coversBlock.titleHeight);
   int selectorCellWidth=coversBlock.bounds.w/COVER_COUNT;
   int currentY=coversBlock.bounds.y+coversBlock.titleHeight;
 
-  // ---- sélecteur de volet ----
+  // ---- Blinds selector ----
   for(int i=0;i<COVER_COUNT;i++){
     bool isHighlighted=(i==pressedSelector)||(i==selectedCover);
     uint32_t backgroundColor=isHighlighted?TFT_BLACK:TFT_WHITE, foregroundColor=isHighlighted?TFT_WHITE:TFT_BLACK;
@@ -301,9 +318,9 @@ void drawCovers(int pressedSelector=-1,int pressedButton=-1){
   for(int i=1;i<COVER_COUNT;i++) drawVerticalLine(coversBlock.bounds.x+i*selectorCellWidth,currentY,coversBlock.selectHeight,TFT_BLACK,LINE_THICKNESS);
   currentY+=coversBlock.selectHeight; drawHorizontalLine(coversBlock.bounds.x,currentY,coversBlock.bounds.w,TFT_BLACK,LINE_THICKNESS);
 
-  // ---- commandes du volet sélectionné (affichées une seule fois) ----
+  // ---- commands for the selected cover (displayed only once) ----
   int buttonCellWidth=coversBlock.bounds.w/3, stopIconSize=min(buttonCellWidth,coversBlock.buttonsHeight)/4;
-  display.loadFont(SpaceMono42); // police plus grande pour les flèches ↑ / ↓ (chargée une seule fois, pas à chaque bouton)
+  display.loadFont(SpaceMono42);  // larger font for the up/down arrows (loaded once, not every button)
   for(int i=0;i<3;i++){
     bool isHighlighted=(i==pressedButton);
     uint32_t backgroundColor=isHighlighted?TFT_BLACK:TFT_WHITE, foregroundColor=isHighlighted?TFT_WHITE:TFT_BLACK;
@@ -314,7 +331,7 @@ void drawCovers(int pressedSelector=-1,int pressedButton=-1){
     else if(i==1) drawStopIcon(centerX,centerY,(int)(stopIconSize*.4),foregroundColor);
     else display.drawString("↓",centerX,centerY);
   }
-  display.loadFont(SpaceMono26); // on revient à la police par défaut pour la suite
+  display.loadFont(SpaceMono26);  // back to the default font for the rest
 
   drawVerticalLine(coversBlock.bounds.x+buttonCellWidth,currentY,coversBlock.buttonsHeight,TFT_BLACK,LINE_THICKNESS);
   drawVerticalLine(coversBlock.bounds.x+2*buttonCellWidth,currentY,coversBlock.buttonsHeight,TFT_BLACK,LINE_THICKNESS);
@@ -322,33 +339,34 @@ void drawCovers(int pressedSelector=-1,int pressedButton=-1){
   drawThickRoundedRect(coversBlock.bounds.x,coversBlock.bounds.y,coversBlock.bounds.w,coversBlock.bounds.h,CORNER_RADIUS,TFT_BLACK,BORDER_THICKNESS);
 }
 
-// Aligne les colonnes (nom / température / humidité) sur une position X fixe,
-// indépendamment de la longueur du label ("Salon" vs "Extérieur"), pour que
-// les valeurs de température et d'humidité restent alignées entre les lignes.
+
+// Aligns the columns (name / temperature / humidity) on a fixed X position,
+// independently of the length of the label ("Living Room" vs "Outside"), to keep
+// the temperature and humidity values aligned between lines.
 void drawClimateInfoRow(int y,int height,const char* label,const String& tempLabel,const String& humidityLabel){
-  constexpr float LABEL_X_RATIO = 0.03f;  // marge gauche
-  constexpr float TEMP_X_RATIO  = 0.408f; // colonne température
-  constexpr float HUM_X_RATIO   = 0.788f; // colonne humidité
+  constexpr float LABEL_X_RATIO = 0.03f;  // left margin
+  constexpr float TEMP_X_RATIO  = 0.408f; // temperature column
+  constexpr float HUM_X_RATIO   = 0.788f; // humidity column
 
   int centerY=y+height/2;
   display.setTextColor(TFT_BLACK,TFT_WHITE);
   display.setTextSize(1);
 
-  display.setTextDatum(middle_left); // datum local : les 3 colonnes sont alignées à gauche de leur X
+  display.setTextDatum(middle_left); // local datum : the 3 columns are aligned to the left of their X
   display.drawString(label, climate.bounds.x+(int)(climate.bounds.w*LABEL_X_RATIO), centerY);
   display.drawString(tempLabel.c_str(), climate.bounds.x+(int)(climate.bounds.w*TEMP_X_RATIO), centerY);
   display.drawString(humidityLabel.c_str(), climate.bounds.x+(int)(climate.bounds.w*HUM_X_RATIO), centerY);
-  display.setTextDatum(middle_center); // on remet le datum par défaut utilisé partout ailleurs
+  display.setTextDatum(middle_center); // reset to the default datum used everywhere else
 }
 
-// pressedModeIndex : bouton de mode en cours d'appui (-1 = aucun)
-// pressedTempIndex : bouton -/+ en cours d'appui (-1 = aucun)
+// pressedModeIndex : button mode currently pressed (-1 = none)
+// pressedTempIndex : +/- button currently pressed (-1 = none)
 void drawClimate(int pressedModeIndex=-1,int pressedTempIndex=-1){
-  drawCardFrame(climate.bounds,"Climatisation",climate.titleHeight);
+  drawCardFrame(climate.bounds,"Climate Control",climate.titleHeight);
   int cellWidth=climate.bounds.w/3;
   int currentY=climate.bounds.y+climate.titleHeight;
 
-  // ---- ligne mode : icône volutes (chauffage) / icône flocon (clim) / OFF ----
+  // ---- mode line : cloud icon (heating) / snowflake icon (cooling) / OFF ----
   int modeIconSize=min(cellWidth,climate.modeHeight)/4;
   for(int i=0;i<3;i++){
     bool isHighlighted=(i==pressedModeIndex)||(hvacMode==HVAC_MODES[i]);
@@ -363,8 +381,8 @@ void drawClimate(int pressedModeIndex=-1,int pressedTempIndex=-1){
   drawVerticalLine(climate.bounds.x+2*cellWidth,currentY,climate.modeHeight,TFT_BLACK,LINE_THICKNESS);
   currentY+=climate.modeHeight; drawHorizontalLine(climate.bounds.x,currentY,climate.bounds.w,TFT_BLACK,LINE_THICKNESS);
 
-  // ---- ligne consigne : - / valeur / + ----
-  String targetTempLabel=hasTarget?String(targetTemp,1)+"°C":"--";
+  // ---- line of target : - / value / + ----
+  String targetTempLabel=hasTarget?String(targetTemp,1)+"°F":"--";
   for(int i=0;i<3;i++){
     bool isHighlighted=(i==pressedTempIndex);
     uint32_t backgroundColor=isHighlighted?TFT_BLACK:TFT_WHITE, foregroundColor=isHighlighted?TFT_WHITE:TFT_BLACK;
@@ -379,22 +397,25 @@ void drawClimate(int pressedModeIndex=-1,int pressedTempIndex=-1){
   drawVerticalLine(climate.bounds.x+2*cellWidth,currentY,climate.tempHeight,TFT_BLACK,LINE_THICKNESS);
   currentY+=climate.tempHeight; drawHorizontalLine(climate.bounds.x,currentY,climate.bounds.w,TFT_BLACK,LINE_THICKNESS);
 
-  // ---- ligne info : température actuelle + humidité (salon) ----
-  String indoorTempLabel=hasCurrent?String(currentTemp,1)+"°C":"";
-  String indoorHumidityLabel=hasHumidity?String(currentHumidity,0)+"%":"";
-  drawClimateInfoRow(currentY,climate.indoorInfoHeight,"Salon",indoorTempLabel,indoorHumidityLabel);
+  // ---- line of info : current temperature + humidity (living room) ----
+  // currentTemp & currentHumidity
+  String indoorTempLabel=hasCurrent?String(currentTemp,1)+"°F":"";
+  String indoorHumidityLabel=hasHumidity?String(currentHumidity,0)+"rH":"";
+  drawClimateInfoRow(currentY,climate.indoorInfoHeight,"Den",indoorTempLabel,indoorHumidityLabel);
   currentY+=climate.indoorInfoHeight; drawHorizontalLine(climate.bounds.x,currentY,climate.bounds.w,TFT_BLACK,LINE_THICKNESS);
 
-  // ---- ligne info : température/humidité chambre ----
-  String bedroomTempLabel=hasBedroomTemp?String(bedroomTemp,1)+"°C":"";
+  // ---- line of info : temperature/humidity bedroom ----
+  //bedroomTemp & bedroomHumidity
+  String bedroomTempLabel=hasBedroomTemp?String(bedroomTemp,1)+"°F":"";
   String bedroomHumidityLabel=hasBedroomHumidity?String(bedroomHumidity,0)+"%":"";
-  drawClimateInfoRow(currentY,climate.bedroomInfoHeight,"Chambre",bedroomTempLabel,bedroomHumidityLabel);
+  drawClimateInfoRow(currentY,climate.bedroomInfoHeight,"Bedroom",bedroomTempLabel,bedroomHumidityLabel);
   currentY+=climate.bedroomInfoHeight; drawHorizontalLine(climate.bounds.x,currentY,climate.bounds.w,TFT_BLACK,LINE_THICKNESS);
 
-  // ---- ligne info : température/humidité extérieure ----
-  String outdoorTempLabel=hasOutdoorTemp?String(outdoorTemp,1)+"°C":"";
+  // ---- line of info : outdoor temperature/humidity ----
+  // outdoorTemp & outdoorHumidity
+  String outdoorTempLabel=hasOutdoorTemp?String(outdoorTemp,1)+"°F":"";
   String outdoorHumidityLabel=hasOutdoorHumidity?String(outdoorHumidity,0)+"%":"";
-  drawClimateInfoRow(currentY,climate.outdoorInfoHeight,"Extérieur",outdoorTempLabel,outdoorHumidityLabel);
+  drawClimateInfoRow(currentY,climate.outdoorInfoHeight,"Outside",outdoorTempLabel,outdoorHumidityLabel);
 
   drawThickRoundedRect(climate.bounds.x,climate.bounds.y,climate.bounds.w,climate.bounds.h,CORNER_RADIUS,TFT_BLACK,BORDER_THICKNESS);
 }
@@ -404,16 +425,16 @@ void drawSpotify(int pressedIndex=-1){
 
   int currentY=spotifyCard.bounds.y+spotifyCard.titleHeight;
 
-  // ---- titre + artiste ----
+  // ---- title + artist ----
   display.setTextColor(TFT_BLACK,TFT_WHITE);
   display.setTextSize(1);
-  String trackTitle=hasSpotify && spotifyTitle.length()?spotifyTitle:"Aucune lecture";
+  String trackTitle=hasSpotify && spotifyTitle.length()?spotifyTitle:"Nothing Playing";
   String trackArtist=hasSpotify && spotifyArtist.length()?spotifyArtist:"";
 
   int lineHeight=spotifyCard.infoHeight/2;
 
   if(trackArtist.length()){
-    // Titre + artiste : chacun centré dans sa moitié du bloc.
+    // Title + artist : each centered in its half of the block.
     display.drawString(
       trackTitle.c_str(),
       spotifyCard.bounds.x+spotifyCard.bounds.w/2,
@@ -425,8 +446,8 @@ void drawSpotify(int pressedIndex=-1){
       currentY+lineHeight+lineHeight/2
     );
   }else{
-    // Pas d'artiste (ou pas de lecture en cours) : le titre seul est centré
-    // sur toute la hauteur du bloc, pour éviter un grand espace vide en dessous.
+    // No artist (or no playback in progress) : the title alone is centered
+    // on the entire height of the block, to avoid a large empty space below.
     display.drawString(
       trackTitle.c_str(),
       spotifyCard.bounds.x+spotifyCard.bounds.w/2,
@@ -437,7 +458,7 @@ void drawSpotify(int pressedIndex=-1){
   currentY+=spotifyCard.infoHeight;
   drawHorizontalLine(spotifyCard.bounds.x,currentY,spotifyCard.bounds.w,TFT_BLACK,LINE_THICKNESS);
 
-  // ---- commandes : précédent / pause / suivant ----
+  // ---- commands : previous / pause / next ----
   int cellWidth=spotifyCard.bounds.w/3;
   int iconSize=min(cellWidth,spotifyCard.buttonsHeight)/4;
   for(int i=0;i<3;i++){
@@ -463,7 +484,7 @@ void drawWifi(bool pressed=false){
     display.setTextColor(TFT_BLACK,TFT_WHITE); display.setTextSize(1);
     display.drawString(WIFI_NAME,wifiCard.bounds.x+wifiCard.bounds.w/2,currentY+wifiCard.buttonHeight/2);
     currentY+=wifiCard.buttonHeight; drawHorizontalLine(wifiCard.bounds.x,currentY,wifiCard.bounds.w,TFT_BLACK,LINE_THICKNESS);
-    display.drawString(("Mot de passe : "+String(WIFI_GUEST_PASSWORD)).c_str(),
+    display.drawString(("Password : "+String(WIFI_GUEST_PASSWORD)).c_str(),
                        wifiCard.bounds.x+wifiCard.bounds.w/2,currentY+wifiCard.passwordHeight/2);
     currentY+=wifiCard.passwordHeight; drawHorizontalLine(wifiCard.bounds.x,currentY,wifiCard.bounds.w,TFT_BLACK,LINE_THICKNESS);
     display.drawString(("Code : "+voucherCode).c_str(),
@@ -473,7 +494,7 @@ void drawWifi(bool pressed=false){
     uint32_t backgroundColor=pressed?TFT_BLACK:TFT_WHITE, foregroundColor=pressed?TFT_WHITE:TFT_BLACK;
     display.fillRect(wifiCard.bounds.x,currentY,wifiCard.bounds.w,totalHeight,backgroundColor);
     display.setTextColor(foregroundColor,backgroundColor); display.setTextSize(1);
-    display.drawString("Activer hotspot",wifiCard.bounds.x+wifiCard.bounds.w/2,currentY+totalHeight/2);
+    display.drawString("Enable hotspot",wifiCard.bounds.x+wifiCard.bounds.w/2,currentY+totalHeight/2);
   }
   drawThickRoundedRect(wifiCard.bounds.x,wifiCard.bounds.y,wifiCard.bounds.w,wifiCard.bounds.h,CORNER_RADIUS,TFT_BLACK,BORDER_THICKNESS);
 }
@@ -491,7 +512,7 @@ void setupLayout(){
   int screenWidth=display.width(), marginX=12, cardWidth=screenWidth-2*marginX, gapBetweenCards=12;
 
   // ---------- Page 1 ----------
-  // Eclairage, puis Modes, puis Spotify, puis Climatisation.
+  // Lighting, then Modes, then Spotify, then Climate.
   int currentY=45;
 
   for(auto actionCard:actionCards){
@@ -503,7 +524,7 @@ void setupLayout(){
 
     currentY+=actionCard->bounds.h+gapBetweenCards;
 
-    // Spotify est placé juste sous les Modes.
+    // Spotify is placed just below the Modes.
     if(actionCard==&modes){
       spotifyCard.titleHeight=LINE_SMALL;
       spotifyCard.infoHeight=LINE_MEDIUM;
@@ -516,7 +537,7 @@ void setupLayout(){
     }
   }
 
-  // ---------- Climatisation ----------
+  // ---------- Climate ----------
   climate.titleHeight=LINE_SMALL;
   climate.modeHeight=LINE_MEDIUM;
   climate.tempHeight=LINE_MEDIUM;
@@ -529,11 +550,11 @@ void setupLayout(){
     climate.titleHeight+climate.modeHeight+climate.tempHeight+climate.indoorInfoHeight+climate.bedroomInfoHeight+climate.outdoorInfoHeight};
 
   // ---------- Page 2 ----------
-  // Volets en premier, puis Hotspot Wi-Fi.
+  // Blinds first, then Wi-Fi Hotspot.
   int page2Y=45;
 
   coversBlock.titleHeight=LINE_SMALL;
-  coversBlock.selectHeight=LINE_MEDIUM; // ligne de sélection de la pièce (CUISINE/SALON)
+  coversBlock.selectHeight=LINE_MEDIUM; // line of piece selection (KITCHEN/LIVING ROOM)
   coversBlock.buttonsHeight=LINE_MEDIUM;
 
   coversBlock.bounds={marginX,page2Y,cardWidth,
@@ -541,7 +562,7 @@ void setupLayout(){
 
   page2Y+=coversBlock.bounds.h+gapBetweenCards;
 
-  // ---------- Hotspot Wi-Fi ----------
+  // ---------- Wi-Fi Hotspot ----------
   wifiCard.titleHeight=LINE_SMALL;
   wifiCard.buttonHeight=LINE_SMALL;
   wifiCard.passwordHeight=LINE_SMALL;
@@ -552,9 +573,9 @@ void setupLayout(){
 }
 
 // ---------- Home Assistant ----------
-// extra : champs JSON additionnels, ex: ",\"temperature\":21.5"
+// extra : additional JSON fields, e.g., ",\"temperature\":21.5"
 bool haCall(const char* domain,const char* service,const char* entity,const String& extra=""){
-  if(WiFi.status()!=WL_CONNECTED){showStatus("Wi-Fi déconnecté");return false;}
+  if(WiFi.status()!=WL_CONNECTED){showStatus("Wi-Fi Disconnected");return false;}
   HTTPClient http;
   http.begin(String(HA_HOST)+"/api/services/"+domain+"/"+service);
   http.addHeader("Authorization",String("Bearer ")+HA_TOKEN);
@@ -592,7 +613,7 @@ void refreshCover(CoverCard& coverCard){
 void refreshClimate(){
   DynamicJsonDocument climateDoc(2048);
   if(haState(ENTITY_CLIMATE,climateDoc)){
-    hvacMode=climateDoc["state"].as<String>();   // "heat" / "cool" / "off" / autre
+    hvacMode=climateDoc["state"].as<String>();   // "heat" / "cool" / "off" / other
     if(!climateDoc["attributes"]["temperature"].isNull()){
       targetTemp=climateDoc["attributes"]["temperature"].as<float>();hasTarget=true;
     }
@@ -636,8 +657,8 @@ void refreshSpotify(){
   spotifyState=spotifyDoc["state"].as<String>();
   spotifyTitle=spotifyDoc["attributes"]["media_title"].as<String>();
   spotifyArtist=spotifyDoc["attributes"]["media_artist"].as<String>();
-  // Certaines métadonnées Spotify/HA contiennent des espaces en début/fin de
-  // chaîne : sans trim(), ils faussent le calcul de centrage horizontal.
+  // Some Spotify/HA metadata strings contain leading/trailing spaces:
+  // without trim(), they skew the horizontal centering calculation.
   spotifyTitle.trim();
   spotifyArtist.trim();
   hasSpotify=(spotifyTitle.length()>0 || spotifyArtist.length()>0);
@@ -661,10 +682,10 @@ void refreshVoucher(){
   }
 }
 
-// Appelle l'API template de Home Assistant (POST /api/template) : le template
-// Jinja2 est évalué côté serveur et DOIT renvoyer du JSON valide en texte.
-// Permet de récupérer plusieurs entités en UNE SEULE requête HTTP au lieu
-// d'une requête par entité (voir refreshStartupData ci-dessous).
+// Calls the Home Assistant template API (POST /api/template): the Jinja2
+// template is evaluated server-side and MUST return valid JSON as text.
+// This allows retrieving multiple entities in a SINGLE HTTP request instead
+// of one request per entity (see refreshStartupData below).
 bool haTemplate(const String& templateStr,DynamicJsonDocument& responseDoc){
   if(WiFi.status()!=WL_CONNECTED)return false;
   HTTPClient http;
@@ -672,8 +693,7 @@ bool haTemplate(const String& templateStr,DynamicJsonDocument& responseDoc){
   http.addHeader("Authorization",String("Bearer ")+HA_TOKEN);
   http.addHeader("Content-Type","application/json");
 
-  // On passe par ArduinoJson pour construire le corps de la requête : ça échappe
-  // automatiquement les guillemets/retours à la ligne présents dans templateStr.
+  // We use ArduinoJson to build the request body: it automatically escapes quotes/newlines present in templateStr.
   DynamicJsonDocument requestDoc(templateStr.length()+64);
   requestDoc["template"]=templateStr;
   String requestBody;
@@ -686,12 +706,11 @@ bool haTemplate(const String& templateStr,DynamicJsonDocument& responseDoc){
   return success;
 }
 
-// Récupère en un seul appel HTTP tout ce qu'il faut pour dessiner la page 1 au
-// démarrage : climatisation, température/humidité intérieure, chambre et
-// extérieure, état des 3 "Modes", et Spotify. Remplace ~11 requêtes
-// séquentielles par 1 seule.
-// NB: si tu modifies les entités ci-dessous, vérifie le rendu du template dans
-// Home Assistant (Outils de développement > Modèle) avant de faire confiance au résultat.
+// Retrieves in a single HTTP call all the data needed to draw page 1 at startup:
+// climate, indoor temperature/humidity, bedroom and outdoor, state of the 3 "Modes",
+// and Spotify. Replaces ~11 sequential requests by 1 single one.
+// NB: if you modify the entities below, verify the rendering of the template in
+// Home Assistant (Developer tools > Template) before relying on the result.
 void refreshStartupData(){
   String jinjaTemplate =
     String("{")
@@ -713,8 +732,7 @@ void refreshStartupData(){
 
   DynamicJsonDocument startupDoc(1024);
   if(!haTemplate(jinjaTemplate,startupDoc)){
-    // Repli : si l'appel groupé échoue (template refusé, etc.), on retombe
-    // sur les requêtes individuelles habituelles - plus lent mais fiable.
+    // Fallback: if the grouped call fails (template rejected, etc.), we fall back to the usual individual requests - slower but more reliable.
     refreshClimate();
     refreshAction(modes);
     refreshSpotify();
@@ -747,12 +765,12 @@ void connectWifi(){
   WiFi.mode(WIFI_STA); WiFi.begin(WIFI_SSID,WIFI_PASSWORD);
   unsigned long startTime=millis();
   while(WiFi.status()!=WL_CONNECTED&&millis()-startTime<15000)delay(300);
-  showStatus(WiFi.status()==WL_CONNECTED?"Wi-Fi connecté":"Echec WiFi");
+  showStatus(WiFi.status()==WL_CONNECTED? "WiFi Connected!":"WiFi Failed");
 }
 
 // ---------- Pages ----------
-// Effacement physique complet avant chaque changement de page.
-// On utilise un mode EPD de qualité pour éviter les artefacts/ghosting.
+// Full physical cleaning before each page change.
+// We use high quality EPD mode to avoid artifacts/ghosting.
 void cleanScreen(){
   display.setEpdMode(epd_mode_t::epd_quality);
   display.startWrite();
@@ -762,7 +780,7 @@ void cleanScreen(){
 }
 
 void drawPage(){
-  // Toujours effacer complètement l'ancien contenu avant de dessiner la nouvelle page.
+  // Always completely clean the old content before drawing the new page.
   cleanScreen();
 
   display.startWrite();
@@ -779,18 +797,23 @@ void drawPage(){
 }
 
 void changePage(int delta){
-  currentPage+=delta;
-  if(currentPage<1)currentPage=2;
-  if(currentPage>2)currentPage=1;
+  currentPage += delta;
+  if (currentPage < 1)
+    currentPage = 2;
+  if (currentPage > 2)
+    currentPage = 1;
   resetActivityTimer();
-  if(currentPage==1){
+  if (currentPage == 1)
+  {
     refreshSpotify();
-  }else if(currentPage==2 && !page2DataLoaded){
-    // Volets et voucher Wi-Fi : chargés seulement au premier passage sur la
-    // page 2, pas au démarrage (on ne charge pas ce qui n'est pas affiché).
-    for(auto &coverCard:covers)refreshCover(coverCard);
+  }
+  else if (currentPage == 2 && !page2DataLoaded)
+  {
+    // Blinds and Wi-Fi voucher : loaded only on the first visit to page 2, not at startup (we don't load what is not shown).
+    for (auto &coverCard : covers)
+      refreshCover(coverCard);
     refreshVoucher();
-    page2DataLoaded=true;
+    page2DataLoaded = true;
   }
   drawPage();
 }
@@ -809,21 +832,28 @@ void enterDeepSleep(){
   lgfx::touch_point_t touchPoint;
   while(digitalRead(PIN_TOUCH_INTERRUPT)==LOW){display.getTouch(&touchPoint);delay(20);}
   esp_sleep_enable_ext0_wakeup(PIN_TOUCH_INTERRUPT,0);
+  // Do this several times so that it 'blanks' the data behind it
+  display.startWrite(); display.fillScreen(TFT_WHITE);
+  display.startWrite(); display.fillScreen(TFT_WHITE);
+  display.startWrite(); display.fillScreen(TFT_WHITE);
   display.startWrite(); display.fillScreen(TFT_WHITE);
   display.setTextDatum(middle_center);display.setTextColor(TFT_BLACK,TFT_WHITE);
   display.loadFont(SpaceMono42);
-  display.setTextSize(1);display.drawString("RÉVEILLE-MOI",display.width()/2,display.height()/2);
+  // Add friendlier messages
+  display.setTextSize(1);display.drawString("Tap to Wake Me Up!",display.width()/2,display.height()/2);
+  display.setTextSize(0.6);display.drawString("ZzZZz ... I'm Sleeping",display.width()/2,display.height()/3);
   display.endWrite(); display.display();
   WiFi.disconnect(true);WiFi.mode(WIFI_OFF);display.setBrightness(0);
   gpio_hold_en(PIN_MAIN_POWER);gpio_deep_sleep_hold_en();Serial.flush();esp_deep_sleep_start();
 }
 
 // ---------- Touch ----------
-// Retourne l'index (0,1,2) de la colonne touchée dans une rangée à 3 cellules.
+// Returns the column index (0,1,2) of the touched cell in a 3-cell row.
 int columnIndexFromX(const Rect& bounds,int cellWidth,int touchX){
   return constrain((touchX-bounds.x)/cellWidth,0,2);
 }
-// Retourne l'index (0..5) du bouton touché dans la grille 3x2 de la carte Eclairage.
+
+// Returns the button index (0..5) of the touched button in the 3x2 grid of the Lighting card.
 int gridIndexFromXY(const ActionCard& actionCard,int touchX,int touchY){
   int cellWidth=actionCard.bounds.w/3, rowHeight=actionCard.buttonsHeight/2, gridTop=actionCard.bounds.y+actionCard.titleHeight;
   return constrain((touchY-gridTop)/rowHeight,0,1)*3+constrain((touchX-actionCard.bounds.x)/cellWidth,0,2);
@@ -835,7 +865,7 @@ bool touchAction(ActionCard& actionCard,int touchX,int touchY){
   display.startWrite();drawAction(actionCard,pressedIndex);display.endWrite();
   showStatus((String(actionCard.label[pressedIndex])+"...").c_str());
   bool ok=haCall(actionCard.domain[pressedIndex],actionCard.service[pressedIndex],actionCard.entity[pressedIndex]);
-  showStatus(ok?"OK":"Erreur commande HA");delay(300);
+  showStatus(ok?"OK":"Error HA Command");delay(300);
   refreshAction(actionCard);display.startWrite();drawAction(actionCard);display.endWrite();return true;
 }
 
@@ -844,7 +874,7 @@ bool touchCovers(int touchX,int touchY){
   int selectorTop=coversBlock.bounds.y+coversBlock.titleHeight;
   int buttonsTop=selectorTop+coversBlock.selectHeight;
 
-  // ---- sélection du volet à piloter ----
+  // ---- selection of the blind to control ----
   if(touchY>=selectorTop&&touchY<buttonsTop){
     int selectorCellWidth=coversBlock.bounds.w/COVER_COUNT;
     selectedCover=constrain((touchX-coversBlock.bounds.x)/selectorCellWidth,0,COVER_COUNT-1);
@@ -852,16 +882,16 @@ bool touchCovers(int touchX,int touchY){
     return true;
   }
 
-  // ---- commande monter/stop/descendre : toujours envoyée à HA ----
+  // ---- command to raise/lower/stop : always sent to HA ----
   if(touchY>=buttonsTop){
     int cellWidth=coversBlock.bounds.w/3;
     int pressedIndex=constrain((touchX-coversBlock.bounds.x)/cellWidth,0,2);
     CoverCard& selectedCoverCard=covers[selectedCover];
     display.startWrite();drawCovers(-1,pressedIndex);display.endWrite();
     const char* service=pressedIndex==0?"open_cover":pressedIndex==1?"stop_cover":"close_cover";
-    showStatus((String(selectedCoverCard.title)+" : "+(pressedIndex==0?"montee...":pressedIndex==1?"stop...":"descente...")).c_str());
+    showStatus((String(selectedCoverCard.title)+" : "+(pressedIndex==0?"raising...":pressedIndex==1?"stopping...":"lowering...")).c_str());
     bool ok=haCall("cover",service,selectedCoverCard.entity);
-    showStatus(ok?"OK":"Erreur commande HA");delay(300);
+    showStatus(ok?"OK":"Error HA Command");delay(300);
     refreshCover(selectedCoverCard);
     display.startWrite();drawCovers();display.endWrite();
   }
@@ -875,21 +905,21 @@ bool touchClimate(int touchX,int touchY){
   int tempRowTop=modeRowTop+climate.modeHeight;
   int infoRowTop=tempRowTop+climate.tempHeight;
 
-  // ---- ligne mode : Chauffage / Clim / Off ----
+  // ---- mode row : Heating / Cooling / Off ----
   if(touchY>=modeRowTop&&touchY<tempRowTop){
     int pressedIndex=constrain((touchX-climate.bounds.x)/climate.cellWidth,0,2);
     display.startWrite();drawClimate(pressedIndex,-1);display.endWrite();
     showStatus((String("Mode : ")+HVAC_LABELS[pressedIndex]+"...").c_str());
     bool ok=haCall("climate","set_hvac_mode",ENTITY_CLIMATE,String(",\"hvac_mode\":\"")+HVAC_MODES[pressedIndex]+"\"");
     if(ok)hvacMode=HVAC_MODES[pressedIndex];
-    showStatus(ok?"OK":"Erreur commande HA");delay(300);
+    showStatus(ok?"OK":"Error HA Command");delay(300);
     refreshClimate();
     display.startWrite();drawClimate();display.endWrite();
     showStatus(currentPage==1?"Page 1/2":"Page 2/2");
     return true;
   }
 
-  // ---- ligne consigne : - / valeur / + ----
+  // ---- temperature row : -, value, + ----
   if(touchY>=tempRowTop&&touchY<infoRowTop){
     int pressedIndex=constrain((touchX-climate.bounds.x)/climate.cellWidth,0,2);
     if(pressedIndex!=1){
@@ -899,15 +929,15 @@ bool touchClimate(int touchX,int touchY){
       char tempBuffer[8];snprintf(tempBuffer,sizeof(tempBuffer),"%.1f",newTargetTemp);
       bool ok=haCall("climate","set_temperature",ENTITY_CLIMATE,String(",\"temperature\":")+tempBuffer);
       if(ok){targetTemp=newTargetTemp;hasTarget=true;}
-      showStatus(ok?"OK":"Erreur commande HA");delay(300);
+      showStatus(ok?"OK":"Error HA Command");delay(300);
     }
-    // Redessine uniquement la carte climatisation, sans effacement plein écran.
+    // Redraws only the climate card, without full screen erase.
     display.startWrite();drawClimate();display.endWrite();
     showStatus(currentPage==1?"Page 1/2":"Page 2/2");
     return true;
   }
 
-  return true; // toucher sur le titre : on ignore mais on consomme l'événement
+  return true; // touching the title: ignored but the event is consumed
 }
 
 bool touchSpotify(int touchX,int touchY){
@@ -924,16 +954,16 @@ bool touchSpotify(int touchX,int touchY){
   const char* service = pressedIndex==0 ? "media_previous_track" :
                         pressedIndex==1 ? "media_play_pause" :
                                "media_next_track";
-  const char* label = pressedIndex==0 ? "Spotify : precedent..." :
-                      pressedIndex==1 ? "Spotify : pause/lecture..." :
-                             "Spotify : suivant...";
+  const char* label = pressedIndex==0 ? "Spotify : Previous..." :
+                      pressedIndex==1 ? "Spotify : Play/Pause..." :
+                             "Spotify : Next ...";
   showStatus(label);
 
   bool ok=haCall("media_player",service,ENTITY_SPOTIFY);
-  showStatus(ok?"OK":"Erreur commande HA");
+  showStatus(ok?"OK":"Error HA command");
   delay(300);
 
-  // Pas de rafraîchissement périodique : on relit uniquement après une commande.
+  // No periodic refresh: we only refresh after a command.
   refreshSpotify();
   display.startWrite();drawSpotify();display.endWrite();
   showStatus(currentPage==1?"Page 1/2":"Page 2/2");
@@ -945,10 +975,10 @@ bool touchWifi(int touchX,int touchY){
   int buttonTop=wifiCard.bounds.y+wifiCard.titleHeight;
   if(touchY<buttonTop)return false;
   display.startWrite();drawWifi(true);display.endWrite();
-  showStatus("Creation voucher Wifi...");
+  showStatus("Creating WiFi Hotspot... ");
   bool ok=haCall("input_button","press",ENTITY_WIFI_BUTTON);
   if(ok){delay(2000);refreshVoucher();showStatus(hasVoucher?("Code : "+voucherCode).c_str():"Code introuvable");}
-  else showStatus("Erreur commande HA");
+  else showStatus("Error HA Command");
   drawPage();delay(300);return true;
 }
 
@@ -957,29 +987,29 @@ void setup(){
   Serial.begin(115200);
   pinMode(PIN_BUTTON_PREV,INPUT_PULLUP); pinMode(PIN_BUTTON_NEXT,INPUT_PULLUP);
 
-  // L'écran doit être initialisé (begin) avant de charger une police dessus.
+  // The screen must be initialized (begin) before loading a font on it.
   display.begin();display.setRotation(0);display.setEpdMode(epd_mode_t::epd_fastest);
   display.loadFont(SpaceMono26);
 
   setupLayout();
   resetActivityTimer();
 
-  // Affichage immédiat avec les valeurs par défaut ("--", OFF...) : l'écran
-  // devient utilisable tout de suite, sans attendre la connexion Wi-Fi ni HA.
+  // Immediate display with default values ("--", OFF...) : the screen
+  // becomes usable immediately, without waiting for Wi-Fi or HA connection.
   drawPage();
 
-  WiFi.setSleep(false); // pas de power-save Wi-Fi : connexions/requêtes plus rapides
+  WiFi.setSleep(false); // no Wi-Fi power-saving : faster connections/requests
   connectWifi();
 
-  // Un seul appel HTTP groupé pour toute la page 1 (climatisation, intérieur/
-  // chambre/extérieur, modes, Spotify), au lieu d'une dizaine de requêtes séquentielles.
+  // Single HTTP call grouped for the entire page 1 (climate, indoor/outdoor/bedroom,
+  // modes, Spotify), instead of a dozen sequential requests.
   refreshStartupData();
 
-  // Volets et voucher Wi-Fi (page 2) : chargés seulement au premier affichage
-  // de cette page, voir changePage().
+  // Blinds and Wi-Fi voucher (page 2) : loaded only on the first display
+  // of this page, see changePage().
 
-  // Redessine seulement les cartes concernées (pas d'effacement plein écran,
-  // cleanScreen() a déjà eu lieu dans le drawPage() ci-dessus).
+  // Redraws only the cards concerned (no full screen erase, cleanScreen() already
+  // occurred in the drawPage() above).
   display.startWrite();
   for(auto actionCard:actionCards)drawAction(*actionCard);
   drawSpotify();
