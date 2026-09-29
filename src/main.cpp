@@ -59,7 +59,7 @@ bool inRect(const Rect& rect,int x,int y){return x>=rect.x&&x<=rect.x+rect.w&&y>
 
 constexpr int CORNER_RADIUS=0, BORDER_THICKNESS=2, LINE_THICKNESS=2;
 
-// ---------- Hauteur des lignes ----------
+// ---------- Line height ----------
 constexpr int LINE_SMALL  = 40;
 constexpr int LINE_MEDIUM = 80;
 constexpr int LINE_LARGE  = 100;
@@ -103,7 +103,7 @@ ActionCard modes={
 // (setupLayout, drawPage, refreshAction, touchAction).
 ActionCard* actionCards[]={&lighting,&modes};
 
-// ---------- Blinds ----------
+// ---------- Blinds/Covers ----------
 // A single command line (up/stop/down), shared between blinds.
 // A selection line allows you to choose which blind it controls.
 struct CoverCard {
@@ -123,7 +123,7 @@ int selectedCover=0;   // index of the blind currently being controlled
 bool page2DataLoaded=false; // Blinds/Wi-Fi voucher data is loaded only on the first display of page 2
 
 // ---------- Climate ----------
-// Operational mode displayed/piloted: Heating / Cooling / Off
+// Operational mode displayed/labels: Heating / Cooling / Off
 // (corresponds to hvac_mode Home Assistant "heat" / "cool" / "off")
 constexpr float TEMP_STEP = 1.0f;
 constexpr float TEMP_MIN  = 10.0f;
@@ -201,7 +201,7 @@ void drawThickLine(int x0,int y0,int x1,int y1,uint32_t color,int thickness){
 // Wavy line (heat wave), drawn in successive segments.
 void drawHeatWaveSegment(int centerX,int topY,int bottomY,int amplitude,uint32_t color){
   const int SEGMENT_COUNT=8;
-  const int THICKNESS=3;   // épaisseur du trait, ajuster au besoin
+  const int THICKNESS=3;  // line thickness, adjust as needed
   int previousX=centerX,previousY=topY;
   for(int i=1;i<=SEGMENT_COUNT;i++){
     float progress=(float)i/SEGMENT_COUNT;
@@ -318,7 +318,7 @@ void drawCovers(int pressedSelector=-1,int pressedButton=-1){
   for(int i=1;i<COVER_COUNT;i++) drawVerticalLine(coversBlock.bounds.x+i*selectorCellWidth,currentY,coversBlock.selectHeight,TFT_BLACK,LINE_THICKNESS);
   currentY+=coversBlock.selectHeight; drawHorizontalLine(coversBlock.bounds.x,currentY,coversBlock.bounds.w,TFT_BLACK,LINE_THICKNESS);
 
-  // ---- commands for the selected cover (displayed only once) ----
+  // ---- Commands for the selected cover (displayed only once) ----
   int buttonCellWidth=coversBlock.bounds.w/3, stopIconSize=min(buttonCellWidth,coversBlock.buttonsHeight)/4;
   display.loadFont(SpaceMono42);  // larger font for the up/down arrows (loaded once, not every button)
   for(int i=0;i<3;i++){
@@ -458,7 +458,7 @@ void drawSpotify(int pressedIndex=-1){
   currentY+=spotifyCard.infoHeight;
   drawHorizontalLine(spotifyCard.bounds.x,currentY,spotifyCard.bounds.w,TFT_BLACK,LINE_THICKNESS);
 
-  // ---- commands : previous / pause / next ----
+  // ---- Commands: Previous / Pause / Next ----
   int cellWidth=spotifyCard.bounds.w/3;
   int iconSize=min(cellWidth,spotifyCard.buttonsHeight)/4;
   for(int i=0;i<3;i++){
